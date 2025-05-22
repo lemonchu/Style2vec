@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
 class FontSampler:
-    def __init__(self, fonts_dir, text_file, chars_file, max_fonts=None, font_size=76):
+    def __init__(self, fonts_dir, text_file, chars_file, max_fonts=None, font_size=76, train_ratio=0.8):
         """
         初始化 FontSampler 类。
 
@@ -14,11 +14,14 @@ class FontSampler:
         :param chars_file: 常用字文件路径
         :param max_fonts: 最大加载的字体数量
         :param font_size: 字体大小
+        :param train_ratio: 用于训练的字体比例，其余用于测试
         """
         self.font_files = self.load_fonts(fonts_dir, max_fonts)
+        self.train_font_files, self.test_font_files = self.split_fonts(self.font_files, train_ratio)
         self.text = self.load_text(text_file)
         self.chars = self.load_text(chars_file).strip()
-        self.image_maps = self.generate_image_map(self.font_files, self.chars, font_size)
+        self.train_image_maps = self.generate_image_map(self.train_font_files, self.chars, font_size)
+        self.test_image_maps = self.generate_image_map(self.test_font_files, self.chars, font_size)
 
     @staticmethod
     def load_fonts(fonts_dir, max_fonts=None):
@@ -82,6 +85,18 @@ class FontSampler:
         cropped_image = canvas.crop((crop_left, crop_top, crop_right, crop_bottom))
         return cropped_image
 
+    def split_fonts(self, font_files, train_ratio):
+        """
+        将字体列表按照 train_ratio 分为训练和测试两部分。
+        
+        :param font_files: 字体文件路径列表
+        :param train_ratio: 训练字体所占比例
+        :return: (训练字体列表, 测试字体列表)
+        """
+        random.shuffle(font_files)
+        split_index = int(len(font_files) * train_ratio)
+        return font_files[:split_index], font_files[split_index:]
+
     def generate_image_map(self, font_files, chars, font_size=72):
         """
         为每个字体生成图像 map。
@@ -104,28 +119,34 @@ class FontSampler:
             image_maps.append(image_map)
         return image_maps
 
-    import random
-    from PIL import Image, ImageDraw, ImageFont
-
-    def sample(self, sample_cnt, rotation_range=(-4, 4), translation_range=(-2, 2), scale_range=(0.92, 1.0)):
+    def sample(self, sample_cnt, rotation_range=(-4, 4), translation_range=(-2, 2), scale_range=(0.92, 1.0), sample_source="train"):
         """
         随机采样：从每个字体的图像map中生成样本。
         每个样本包括一张图片和字体编号。
         图片大小为 224x224，包括 5x5=25 个字
         从 text 的内容中随机取连续的 25 个字，尝试从左到右依次填充到图片中。
         如果遇到常用字中不包含的字，则重新随机。
-
+        
         :param sample_cnt: 每个字体的采样次数
         :param rotation_range: 随机旋转范围
         :param translation_range: 随机平移范围
         :param scale_range: 随机缩放范围
+        :param sample_source: 指定采样字体的来源，"train" 或 "test"
         :return: 样本列表
         """
         samples = []
         text_length = len(self.text)
         char_set = set(self.chars)
 
-        for font_id, font_map in enumerate(self.image_maps):
+        # 根据 sample_source 选择对应的字体图像map
+        if sample_source == "train":
+            image_maps = self.train_image_maps
+        elif sample_source == "test":
+            image_maps = self.test_image_maps
+        else:
+            raise ValueError("sample_source 必须为 'train' 或 'test'")
+
+        for font_id, font_map in enumerate(image_maps):
             for _ in range(sample_cnt):
                 while True:
                     start_idx = random.randint(0, text_length - 25)
@@ -140,33 +161,23 @@ class FontSampler:
                 for i, char in enumerate(selected_chars):
                     x = spacing + (i % 5) * (char_size + spacing)
                     y = spacing + (i // 5) * (char_size + spacing)
-
                     char_image = font_map.get(char)
                     if char_image:
-                        # 先对 84x84 的原图进行旋转和缩放
                         if rotation_range:
                             angle = random.uniform(rotation_range[0], rotation_range[1])
                             char_image = char_image.rotate(angle, expand=True, fillcolor=255)
-
                         if scale_range:
                             scale = random.uniform(scale_range[0], scale_range[1])
                             new_size = (int(84 * scale), int(84 * scale))
                             char_image = char_image.resize(new_size, Image.LANCZOS)
-
                         if translation_range:
                             dx = random.uniform(translation_range[0], translation_range[1])
                             dy = random.uniform(translation_range[0], translation_range[1])
                             x += round(dx)
                             y += round(dy)
-
-                        # 调整字符图像的大小为 42x42
                         char_image = char_image.resize((char_size, char_size), Image.LANCZOS)
-
-                        # 将字符图像粘贴到目标图像上
                         image.paste(char_image, (x, y))
-
                 samples.append((image, font_id))
-
         return samples
 
     @staticmethod
@@ -179,11 +190,13 @@ class FontSampler:
 
 # 测试代码
 if __name__ == "__main__":
-    fonts_dir = "fonts"  # 字体文件夹路径
-    text_file = "text.txt"  # 文本文件路径
+    fonts_dir = "../font_ds/fonts"  # 字体文件夹路径
+    text_file = "../font_ds/cleaned_test.txt"  # 文本文件路径
     chars_file = "chars.txt"  # 常用字文件路径
     output_dir = "sample"  # 输出文件夹路径
 
-    sampler = FontSampler(fonts_dir, text_file, chars_file, max_fonts=16, font_size=76)
-    samples = sampler.sample(sample_cnt=8)
-    sampler.save_samples(samples, output_dir)
+    sampler = FontSampler(fonts_dir, text_file, chars_file, max_fonts=16, font_size=76, train_ratio=0.8)
+    train_samples = sampler.sample(sample_cnt=8, sample_source="train")
+    test_samples = sampler.sample(sample_cnt=8, sample_source="test")
+    sampler.save_samples(train_samples, os.path.join(output_dir, "train"))
+    sampler.save_samples(test_samples, os.path.join(output_dir, "test"))

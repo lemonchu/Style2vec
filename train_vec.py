@@ -12,8 +12,8 @@ from utils import FontSampler
 
 # --------------------------
 # 配置字体相关路径
-fonts_dir = "../font_ds/fonts"            # 字体文件夹路径
-text_file = "../font_ds/cleaned_test.txt" # 文本文件路径
+fonts_dir = "./font_ds/fonts"            # 字体文件夹路径
+text_file = "./font_ds/cleaned_test.txt" # 文本文件路径
 chars_file = "chars.txt"                  # 常用字文件路径
 
 # 初始化 FontSampler，同时会将字体分为 train/test 两类
@@ -46,43 +46,27 @@ model.fc = nn.Sequential(
 # 定义 compute_loss，基于 word2vec 思路计算 loss
 def compute_loss(style_vecs, group_size):
     """
-    计算 style2vec 损失：
-    1. 计算相似度矩阵：通过 dot product 计算嵌入向量间相似度
-    2. 对每一行通过 log_softmax 得到预测分布
-    3. 对于每个样本，其正样本来自与其同一组（组内除自身之外的样本）
-       损失为负对数概率的平均值
-       
-    :param style_vecs: 模型输出的嵌入向量, shape [N, embedding_dim]
-    :param group_size: 每组样本数 (保证采样返回的列表中，同组样本连续排列)
-    :return: scalar loss
-    """
-    # 计算相似度矩阵，shape: [N, N]
-    similarity_matrix = torch.matmul(style_vecs, style_vecs.T)
-    # 计算行内预测分布
-    log_probs = F.log_softmax(similarity_matrix, dim=1)  # shape: [N, N]
-    
-    N = style_vecs.shape[0]
-    loss_total = 0.0
-    count = 0
-    num_groups = N // group_size
-    for i in range(num_groups):
-        group_start = i * group_size
-        group_end = group_start + group_size
-        indices = list(range(group_start, group_end))
-        for j in indices:
-            # 取同组内除自身之外的正样本索引
-            pos_indices = [k for k in indices if k != j]
-            if pos_indices:
-                loss_sample = -log_probs[j, pos_indices].mean()
-                loss_total += loss_sample
-                count += 1
-    return loss_total / count if count > 0 else loss_total
+    计算交叉熵损失。
 
-# --------------------------
-# 预留模板函数：处理采样数据（例如数据增强、拼接等自定义逻辑）
-def process_sample(samples):
-    # TODO: 在此处实现你自己的 sample 数据处理逻辑
-    return samples
+    :param style_vecs: 向量序列，由模型生成
+    :param group_size: 每组的大小
+    :return: 每行的交叉熵平均值，作为最终的 Loss
+    """
+    # 计算相似度矩阵
+    similarity_matrix = torch.matmul(style_vecs, style_vecs.T)
+
+    # 对相似度矩阵的第 i 行做 soft max
+    softmax_matrix = F.softmax(similarity_matrix, dim=1)
+
+    # 创建目标矩阵
+    target_matrix = torch.zeros_like(softmax_matrix)
+    for i in range(0, len(style_vecs), group_size):
+        target_matrix[i:i+group_size, i:i+group_size] = 1/group_size
+
+    # 计算交叉熵损失
+    loss = F.cross_entropy(softmax_matrix, target_matrix)
+
+    return loss
 
 # --------------------------
 # 训练和验证步骤（loss 基于 word2vec 风格的 compute_loss）
@@ -118,42 +102,71 @@ def validate(model, data_loader, group_size):
     progress_bar.close()
     return total_loss / len(data_loader)
 
-# --------------------------
-# 定义优化器（只包含 model 参数）
-optimizer = optim.Adam(model.parameters(), lr=5e-5, betas=(0.9, 0.999), eps=1e-08)
 
-# --------------------------
-num_iters = 1000  # 迭代次数，可根据需求调整
+import torch
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+
+# 假设 data_transforms 是一个预定义的转换函数
+data_transforms = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+
+# 定义一个简单的 Dataset 类来处理样本
+class FontDataset(Dataset):
+    def __init__(self, samples, transform=None):
+        self.samples = samples
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        img, font_id = self.samples[idx]
+        if self.transform:
+            img = self.transform(img)
+        return img, font_id
+
+
+# 定义优化器（只包含 model 参数）
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-5, betas=(0.9, 0.999), eps=1e-08)
+
+# 迭代次数，可根据需求调整
+num_iters = 1000
 random.seed(42)
+
 # 假设每次采样返回的样本中，同一字体的样本数等于 sample_cnt，此处作为 group_size
-train_sample_cnt = 8
-test_sample_cnt = 2
-group_size = 4
+font_cnt = 8
+sample_cnt = 8
+batch_size = 16  # 每个批次的样本数
 
 for iter in range(num_iters):
-    # 通过 FontSampler 获取训练和测试样本
-    # sampler.sample 返回 [(image, font_id), ...]，此处忽略 font_id
-    train_samples = sampler.sample(sample_cnt=train_sample_cnt, sample_source="train")
-    test_samples = sampler.sample(sample_cnt=test_sample_cnt, sample_source="test")
-    
-    # 调用自定义的数据处理逻辑（预留模板）
-    train_samples = process_sample(train_samples)
-    test_samples = process_sample(test_samples)
-    
-    # 对每个样本图像做 transformation 处理
-    train_samples = [(data_transforms(img), font_id) for img, font_id in train_samples]
-    test_samples = [(data_transforms(img), font_id) for img, font_id in test_samples]
-    
-    # 利用 Python 列表构造 DataLoader
-    train_loader = DataLoader(train_samples, batch_size=16, shuffle=True)
-    test_loader = DataLoader(test_samples, batch_size=16, shuffle=True)
-    
+    # 收集 batch_size 个训练样本
+    train_samples = []
+    for _ in range(batch_size):
+        sample = sampler.sample(font_cnt=font_cnt, sample_cnt=sample_cnt, sample_source="train")
+        train_samples.extend(sample)
+
+    # 收集 batch_size 个测试样本
+    test_samples = []
+    for _ in range(batch_size):
+        sample = sampler.sample(font_cnt=font_cnt, sample_cnt=sample_cnt, sample_source="test")
+        test_samples.extend(sample)
+
+    # 创建 Dataset 和 DataLoader
+    train_dataset = FontDataset(train_samples, transform=data_transforms)
+    test_dataset = FontDataset(test_samples, transform=data_transforms)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
     # 执行本次迭代的训练与验证
-    train_loss = train_step(model, train_loader, optimizer, group_size)
-    val_loss = validate(model, test_loader, group_size)
-    print(f"Iter {iter+1}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+    train_loss = train_step(model, train_loader, optimizer)
+    val_loss = validate(model, test_loader)
+    print(f"Iter {iter + 1}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
 # 保存模型
 torch.save(model.state_dict(), 'font_identifier_model.pth')
-
-

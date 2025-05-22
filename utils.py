@@ -119,14 +119,19 @@ class FontSampler:
             image_maps.append(image_map)
         return image_maps
 
-    def sample(self, sample_cnt, rotation_range=(-4, 4), translation_range=(-2, 2), scale_range=(0.92, 1.0), sample_source="train"):
+    import random
+    from PIL import Image
+
+    def sample(self, font_cnt, sample_cnt, rotation_range=(-4, 4), translation_range=(-2, 2), scale_range=(0.92, 1.0),
+               sample_source="train"):
         """
-        随机采样：从每个字体的图像map中生成样本。
+        随机采样：从随机选择的字体子集中生成样本。
         每个样本包括一张图片和字体编号。
-        图片大小为 224x224，包括 5x5=25 个字
+        图片大小为 224x224，包括 5x5=25 个字。
         从 text 的内容中随机取连续的 25 个字，尝试从左到右依次填充到图片中。
         如果遇到常用字中不包含的字，则重新随机。
-        
+
+        :param font_cnt: 随机选择的字体数量
         :param sample_cnt: 每个字体的采样次数
         :param rotation_range: 随机旋转范围
         :param translation_range: 随机平移范围
@@ -146,7 +151,11 @@ class FontSampler:
         else:
             raise ValueError("sample_source 必须为 'train' 或 'test'")
 
-        for font_id, font_map in enumerate(image_maps):
+        # 随机选择 font_cnt 个字体
+        selected_font_ids = random.sample(range(len(image_maps)), font_cnt)
+        selected_image_maps = [image_maps[font_id] for font_id in selected_font_ids]
+
+        for font_id, font_map in zip(selected_font_ids, selected_image_maps):
             for _ in range(sample_cnt):
                 while True:
                     start_idx = random.randint(0, text_length - 25)
@@ -190,13 +199,13 @@ class FontSampler:
 
 # 测试代码
 if __name__ == "__main__":
-    fonts_dir = "../font_ds/fonts"  # 字体文件夹路径
-    text_file = "../font_ds/cleaned_test.txt"  # 文本文件路径
-    chars_file = "chars.txt"  # 常用字文件路径
+    fonts_dir = "./font_ds/fonts"  # 字体文件夹路径
+    text_file = "./font_ds/text.txt"  # 文本文件路径
+    chars_file = "./font_ds/chars.txt"  # 常用字文件路径
     output_dir = "sample"  # 输出文件夹路径
 
-    sampler = FontSampler(fonts_dir, text_file, chars_file, max_fonts=16, font_size=76, train_ratio=0.8)
-    train_samples = sampler.sample(sample_cnt=8, sample_source="train")
-    test_samples = sampler.sample(sample_cnt=8, sample_source="test")
+    sampler = FontSampler(fonts_dir, text_file, chars_file, max_fonts=16, font_size=76, train_ratio=0.5)
+    train_samples = sampler.sample(font_cnt=4, sample_cnt=8, sample_source="train")
+    test_samples = sampler.sample(font_cnt=4, sample_cnt=8, sample_source="test")
     sampler.save_samples(train_samples, os.path.join(output_dir, "train"))
     sampler.save_samples(test_samples, os.path.join(output_dir, "test"))

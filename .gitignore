@@ -10,3 +10,4 @@ google_fonts
 *.pth
 *.safetensors
 sample/
+font_ds/

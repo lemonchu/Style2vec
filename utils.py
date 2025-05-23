@@ -6,41 +6,38 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 class FontSampler:
-    def __init__(self, fonts_dir, text_file, chars_file, max_fonts=None, font_size=76, train_ratio=0.8):
+    def __init__(self, fonts_dir, text_file, chars_file, font_size=76):
         """
         初始化 FontSampler 类。
 
-        :param fonts_dir: 字体文件夹路径
+        :param fonts_dir: 字体文件夹路径，包含 train 和 test 子文件夹
         :param text_file: 文本文件路径
         :param chars_file: 常用字文件路径
-        :param max_fonts: 最大加载的字体数量
         :param font_size: 字体大小
-        :param train_ratio: 用于训练的字体比例，其余用于测试
         """
-        self.font_files = self.load_fonts(fonts_dir, max_fonts)
-        self.train_font_files, self.test_font_files = self.split_fonts(self.font_files, train_ratio)
+        # 从 train 和 test 文件夹中加载字体
+        self.train_font_files = self.load_fonts(os.path.join(fonts_dir, "train"))
+        self.test_font_files = self.load_fonts(os.path.join(fonts_dir, "test"))
+
+        # 加载文本和字符集
         self.text = self.load_text(text_file)
         self.chars = self.load_text(chars_file).strip()
         self.chars_set = set(self.chars)
+
+        # 为 train 和 test 字体生成图像 map
         self.train_image_maps = self.generate_image_map(self.train_font_files, self.chars, font_size)
         self.test_image_maps = self.generate_image_map(self.test_font_files, self.chars, font_size)
 
     @staticmethod
-    def load_fonts(fonts_dir, max_fonts=None):
+    def load_fonts(fonts_dir):
         """
-        加载所有 ttf 字体文件。
+        加载指定文件夹中的所有 ttf 字体文件。
 
         :param fonts_dir: 字体文件夹路径
-        :param max_fonts: 最大加载的字体数量
         :return: 字体路径列表
         """
         font_files = [os.path.join(fonts_dir, f) for f in os.listdir(fonts_dir) if f.endswith('.ttf')]
-        if max_fonts is not None:
-            font_files = font_files[:max_fonts]
-        
-        # 将字体随机打乱
-        random.shuffle(font_files)
-        
+        random.shuffle(font_files)  # 随机打乱字体顺序
         return font_files
 
     @staticmethod
@@ -161,7 +158,7 @@ class FontSampler:
         samples = []
         text_length = len(self.text)
 
-        # 根据 sample_source 选择对应的字体图像map
+        # 根据 sample_source 选择对应的字体图像 map
         if sample_source == "train":
             image_maps = self.train_image_maps
         elif sample_source == "test":
@@ -208,22 +205,25 @@ class FontSampler:
         return samples
 
     @staticmethod
-    def save_samples(samples, output_dir):
+    def save_samples(samples, output_dir, sample_cnt):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        for idx, (image, font_id) in enumerate(samples):
-            output_path = os.path.join(output_dir, f"sample_{idx}_font_{font_id}.png")
+        for idx, image in enumerate(samples):
+            # 每 sample_cnt 张属于同一字体
+            font_label = idx // sample_cnt
+            inner_idx = idx % sample_cnt
+            output_path = os.path.join(output_dir, f"font_{font_label}_sample_{inner_idx}.png")
             image.save(output_path)
 
 # 测试代码
 if __name__ == "__main__":
-    fonts_dir = "./font_ds/fonts"  # 字体文件夹路径
-    text_file = "./font_ds/text.txt"  # 文本文件路径
-    chars_file = "./font_ds/chars.txt"  # 常用字文件路径
+    fonts_dir = "./font_ds_mini/fonts"  # 字体文件夹路径
+    text_file = "./font_ds_mini/cleaned_text.txt"  # 文本文件路径
+    chars_file = "./font_ds_mini/chars.txt"  # 常用字文件路径
     output_dir = "sample"  # 输出文件夹路径
 
-    sampler = FontSampler(fonts_dir, text_file, chars_file, max_fonts=16, font_size=76, train_ratio=0.5)
-    train_samples = sampler.sample(font_cnt=4, sample_cnt=8, sample_source="train")
-    test_samples = sampler.sample(font_cnt=4, sample_cnt=8, sample_source="test")
-    sampler.save_samples(train_samples, os.path.join(output_dir, "train"))
-    sampler.save_samples(test_samples, os.path.join(output_dir, "test"))
+    sampler = FontSampler(fonts_dir, text_file, chars_file, font_size=76)
+    # train_samples = sampler.sample(font_cnt=16, sample_cnt=8, sample_source="train")
+    test_samples = sampler.sample(font_cnt=16, sample_cnt=16, sample_source="test")
+    # sampler.save_samples(train_samples, os.path.join(output_dir, "train"), sample_cnt=8)
+    sampler.save_samples(test_samples, os.path.join(output_dir, "test"), sample_cnt=16)

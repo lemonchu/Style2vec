@@ -9,5 +9,5 @@ google_fonts
 
 *.pth
 *.safetensors
-sample/
-font_ds/
+font_ds*
+pyrightconfig.json

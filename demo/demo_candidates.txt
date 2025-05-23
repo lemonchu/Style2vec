@@ -1,0 +1,16 @@
+sample/test/font_0_sample_12.png
+sample/test/font_1_sample_14.png
+sample/test/font_2_sample_8.png
+sample/test/font_3_sample_1.png
+sample/test/font_4_sample_3.png
+sample/test/font_5_sample_5.png
+sample/test/font_6_sample_6.png
+sample/test/font_7_sample_9.png
+sample/test/font_8_sample_10.png
+sample/test/font_9_sample_2.png
+sample/test/font_10_sample_4.png
+sample/test/font_11_sample_12.png
+sample/test/font_12_sample_0.png
+sample/test/font_13_sample_11.png
+sample/test/font_14_sample_13.png
+sample/test/font_15_sample_15.png

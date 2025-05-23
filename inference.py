@@ -71,6 +71,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Inference script: outputs model embeddings for one or more images")
     parser.add_argument("images", nargs="+", help="Paths to one or more input images")
-    parser.add_argument("--model_path", type=str, default="./font_identifier_model_epoch_7.pth", help="Path to the model file")
+    parser.add_argument("--model_path", type=str, default="./font_style2vec.pth", help="Path to the model file")
     args = parser.parse_args()
     main(args)

@@ -3,6 +3,7 @@ import random
 from tqdm import tqdm
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 
 class FontSampler:
     def __init__(self, fonts_dir, text_file, chars_file, max_fonts=None, font_size=76, train_ratio=0.8):
@@ -20,6 +21,7 @@ class FontSampler:
         self.train_font_files, self.test_font_files = self.split_fonts(self.font_files, train_ratio)
         self.text = self.load_text(text_file)
         self.chars = self.load_text(chars_file).strip()
+        self.chars_set = set(self.chars)
         self.train_image_maps = self.generate_image_map(self.train_font_files, self.chars, font_size)
         self.test_image_maps = self.generate_image_map(self.test_font_files, self.chars, font_size)
 
@@ -35,6 +37,10 @@ class FontSampler:
         font_files = [os.path.join(fonts_dir, f) for f in os.listdir(fonts_dir) if f.endswith('.ttf')]
         if max_fonts is not None:
             font_files = font_files[:max_fonts]
+        
+        # 将字体随机打乱
+        random.shuffle(font_files)
+        
         return font_files
 
     @staticmethod
@@ -99,7 +105,7 @@ class FontSampler:
 
     def generate_image_map(self, font_files, chars, font_size=72):
         """
-        为每个字体生成图像 map。
+        为每个字体生成图像 map，使用多线程加速字符渲染。
 
         :param font_files: 字体文件路径列表
         :param chars: 常用字列表
@@ -107,20 +113,33 @@ class FontSampler:
         :return: 图像map列表，每个图像map对应一个字体
         """
         image_maps = []
-        for font_path in tqdm(font_files, desc="Loading fonts and rendering characters"):
+
+        def render_characters_for_font(font_path):
+            """
+            渲染单个字体的所有字符图像 map。
+            """
             font = ImageFont.truetype(font_path, font_size)
             image_map = {}
-            for char in chars:
-                try:
-                    image = self.render_character(font, char)
-                    image_map[char] = image
-                except Exception as e:
-                    print(f"Error rendering character '{char}' in font {font_path}: {e}")
-            image_maps.append(image_map)
-        return image_maps
 
-    import random
-    from PIL import Image
+            # 使用多线程渲染字符
+            def render_single_character(char):
+                return char, self.render_character(font, char)
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(render_single_character, char): char for char in chars}
+                for future in futures:
+                    char, image = future.result()
+                    if image is not None:
+                        image_map[char] = image
+
+            return image_map
+
+        # 渲染所有字体
+        for font_path in tqdm(font_files, desc="Loading fonts and rendering characters"):
+            image_map = render_characters_for_font(font_path)
+            image_maps.append(image_map)
+
+        return image_maps
 
     def sample(self, font_cnt, sample_cnt, rotation_range=(-4, 4), translation_range=(-2, 2), scale_range=(0.92, 1.0),
                sample_source="train"):
@@ -141,7 +160,6 @@ class FontSampler:
         """
         samples = []
         text_length = len(self.text)
-        char_set = set(self.chars)
 
         # 根据 sample_source 选择对应的字体图像map
         if sample_source == "train":
@@ -155,12 +173,12 @@ class FontSampler:
         selected_font_ids = random.sample(range(len(image_maps)), font_cnt)
         selected_image_maps = [image_maps[font_id] for font_id in selected_font_ids]
 
-        for font_id, font_map in zip(selected_font_ids, selected_image_maps):
+        for font_map in selected_image_maps:
             for _ in range(sample_cnt):
                 while True:
                     start_idx = random.randint(0, text_length - 25)
                     selected_chars = self.text[start_idx:start_idx + 25]
-                    if all(char in char_set for char in selected_chars):
+                    if all(char in self.chars_set for char in selected_chars):
                         break
 
                 image = Image.new("L", (224, 224), color=255)
@@ -186,7 +204,7 @@ class FontSampler:
                             y += round(dy)
                         char_image = char_image.resize((char_size, char_size), Image.LANCZOS)
                         image.paste(char_image, (x, y))
-                samples.append((image, font_id))
+                samples.append(image)
         return samples
 
     @staticmethod

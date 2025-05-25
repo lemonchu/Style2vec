@@ -1,5 +1,11 @@
 # Style2Vec
 
+Before exploring this project, ensure that all required dependencies are installed:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Training
 
 After preparing your own dataset, you can train the model using one of the following commands:

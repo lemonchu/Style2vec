@@ -1,0 +1,11 @@
+demo/scaled_candidates/c_1.png
+demo/scaled_candidates/c_2.png
+demo/scaled_candidates/y_1.png
+demo/scaled_candidates/y_2.png
+demo/scaled_candidates/y_9.png
+demo/scaled_candidates/l_0.png
+demo/scaled_candidates/l_1.png
+demo/scaled_candidates/l_2.png
+demo/scaled_candidates/l_3.png
+demo/scaled_candidates/l_b1.png
+demo/scaled_candidates/l_b2.png

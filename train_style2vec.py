@@ -28,13 +28,6 @@ model = models.resnet34(weights=models.ResNet34_Weights.DEFAULT).to(device)
 embedding_dim = 128  # 输出嵌入向量的维度
 hidden_dim = 256     # 隐藏层维度
 
-# 定义优化器（只包含 model 参数）
-optimizer = torch.optim.Adam(model.parameters(), lr=4e-4, betas=(0.9, 0.999), eps=1e-08)
-
-# 迭代次数，可根据需求调整
-num_epochs = 128
-epoch_length = 64  # 每个 epoch 中的 batch 个数
-
 # 修改最后全连接层，直接输出嵌入向量
 model.fc = nn.Sequential(
     nn.Linear(model.fc.in_features, hidden_dim),
@@ -43,6 +36,10 @@ model.fc = nn.Sequential(
     nn.ReLU(inplace=True),
     nn.Linear(hidden_dim, embedding_dim)
 ).to(device)
+
+# 定义优化器（只包含 model 参数）
+optimizer = torch.optim.Adam(model.parameters(), lr=4e-4, betas=(0.9, 0.999), eps=1e-08)
+
 
 def compute_loss_and_acc(style_vecs, group_size):
     """
@@ -187,6 +184,10 @@ class FontDataset(Dataset):
         if self.transform:
             batch = [[self.transform(img) for img in inner_list] for inner_list in batch]
         return batch
+    
+# 迭代次数，可根据需求调整
+num_epochs = 32
+epoch_length = 128  # 每个 epoch 中的 batch 个数
 
 # 假设每次采样返回的样本中，同一字体的样本数等于 sample_cnt，此处作为 group_size
 font_cnt = 4

@@ -4,9 +4,10 @@ from tqdm import tqdm
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+import cv2
 
 class FontSampler:
-    def __init__(self, fonts_dir, text_file, chars_file, font_size=76):
+    def __init__(self, fonts_dir, text_file, chars_file, font_size=78):
         """
         初始化 FontSampler 类。
 
@@ -100,7 +101,7 @@ class FontSampler:
         split_index = int(len(font_files) * train_ratio)
         return font_files[:split_index], font_files[split_index:]
 
-    def generate_image_map(self, font_files, chars, font_size=72):
+    def generate_image_map(self, font_files, chars, font_size):
         """
         为每个字体生成图像 map，使用多线程加速字符渲染。
 
@@ -138,8 +139,10 @@ class FontSampler:
 
         return image_maps
 
-    def sample(self, font_cnt, sample_cnt, rotation_range=(-4, 4), translation_range=(-2, 2), scale_range=(0.92, 1.0),
-               sample_source="train"):
+    def sample(self, font_cnt, sample_cnt, 
+               rotation_range=(-4, 4), translation_range=(-2, 2), 
+               font_scale_range=(0.85, 1.06), char_scale_range=(0.95,1.0), 
+               bold_range=(-1, 1), sample_source="train"):
         """
         随机采样：从随机选择的字体子集中生成样本。
         每个样本包括一张图片和字体编号。
@@ -181,24 +184,50 @@ class FontSampler:
                 image = Image.new("L", (224, 224), color=255)
                 char_size = 42
                 spacing = 2
+                font_scale = random.uniform(font_scale_range[0], font_scale_range[1])
+                bold_effect = round(random.uniform(bold_range[0], bold_range[1]))
 
                 for i, char in enumerate(selected_chars):
                     x = spacing + (i % 5) * (char_size + spacing)
                     y = spacing + (i // 5) * (char_size + spacing)
                     char_image = font_map.get(char)
                     if char_image:
-                        if rotation_range:
-                            angle = random.uniform(rotation_range[0], rotation_range[1])
-                            char_image = char_image.rotate(angle, expand=True, fillcolor=255)
-                        if scale_range:
-                            scale = random.uniform(scale_range[0], scale_range[1])
-                            new_size = (int(84 * scale), int(84 * scale))
-                            char_image = char_image.resize(new_size, Image.LANCZOS)
-                        if translation_range:
-                            dx = random.uniform(translation_range[0], translation_range[1])
-                            dy = random.uniform(translation_range[0], translation_range[1])
-                            x += round(dx)
-                            y += round(dy)
+                        
+                        # 转换为 NumPy 数组
+                        char_np = np.array(char_image)
+                        
+                        # 对字符进行随机加粗或侵蚀
+                        if bold_effect > 0:
+                            kernel = np.ones((bold_effect+1, bold_effect+1), dtype=np.uint8)
+                            char_np = cv2.dilate(char_np, kernel, iterations=1)
+                        elif bold_effect < 0:
+                            kernel = np.ones((-bold_effect+1, -bold_effect+1), dtype=np.uint8)
+                            char_np = cv2.erode(char_np, kernel, iterations=1)
+                        
+                        # 转回 PIL Image
+                        char_image = Image.fromarray(char_np)
+    
+                        angle = random.uniform(rotation_range[0], rotation_range[1])
+                        char_image = char_image.rotate(angle, expand=True, fillcolor=255)
+                        
+                        # 缩放字体图像，但保持画布大小为 84x84
+                        char_scale = font_scale * random.uniform(char_scale_range[0], char_scale_range[1])
+                        char_scale = min(char_scale, 1.0)  # 限制缩放范围
+                        new_size = (int(84 * char_scale), int(84 * char_scale))
+                        char_image = char_image.resize(new_size, Image.LANCZOS)
+
+                        # 创建固定大小的画布
+                        canvas_fixed = Image.new("L", (84, 84), color=255)
+                        paste_x = (84 - new_size[0]) // 2
+                        paste_y = (84 - new_size[1]) // 2
+                        canvas_fixed.paste(char_image, (paste_x, paste_y))
+                        char_image = canvas_fixed
+
+                        dx = random.uniform(translation_range[0], translation_range[1])
+                        dy = random.uniform(translation_range[0], translation_range[1])
+                        x += round(dx)
+                        y += round(dy)
+
                         char_image = char_image.resize((char_size, char_size), Image.LANCZOS)
                         image.paste(char_image, (x, y))
                 samples.append(image)
@@ -218,12 +247,10 @@ class FontSampler:
 # 测试代码
 if __name__ == "__main__":
     fonts_dir = "./font_ds_mini/fonts"  # 字体文件夹路径
-    text_file = "./font_ds_mini/cleaned_text.txt"  # 文本文件路径
-    chars_file = "./font_ds_mini/chars.txt"  # 常用字文件路径
+    text_file = "./font_ds/cleaned_text.txt"  # 文本文件路径
+    chars_file = "./font_ds/chars.txt"  # 常用字文件路径
     output_dir = "sample"  # 输出文件夹路径
 
     sampler = FontSampler(fonts_dir, text_file, chars_file, font_size=76)
-    # train_samples = sampler.sample(font_cnt=16, sample_cnt=8, sample_source="train")
     test_samples = sampler.sample(font_cnt=16, sample_cnt=16, sample_source="test")
-    # sampler.save_samples(train_samples, os.path.join(output_dir, "train"), sample_cnt=8)
     sampler.save_samples(test_samples, os.path.join(output_dir, "test"), sample_cnt=16)
